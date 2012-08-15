@@ -165,9 +165,9 @@ mpdSend str = send' `catchError` handler
           | otherwise = throwError err
 
         send' :: MPD [ByteString]
-        send' = MPD $ gets stHandle >>= maybe (throwError NoMPD) go
+        send' = getHandle >>= go
 
-        go handle = do
+        go handle = MPD $ do
             unless (null str) $
                 liftIO $ U.hPutStrLn handle str >> hFlush handle
             liftIO ((Right <$> getLines handle []) `catch` (return . Left))
@@ -181,6 +181,13 @@ mpdSend str = send' `catchError` handler
             if "OK" `isPrefixOf` l || "ACK" `isPrefixOf` l
                 then (return . reverse) (l:acc)
                 else getLines handle (l:acc)
+
+        -- Return a handle to MPD.  Establish a connection, if necessary.
+        getHandle :: MPD Handle
+        getHandle = get >>= maybe tryReconnect return
+            where
+                get = MPD (gets stHandle)
+                tryReconnect = mpdOpen >> get >>= maybe (throwError NoMPD) return
 
 
 --
