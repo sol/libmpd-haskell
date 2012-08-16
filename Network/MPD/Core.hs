@@ -19,12 +19,12 @@ module Network.MPD.Core (
     getResponse, kill,
     ) where
 
-import           Network.MPD.Core.MPDT
+import           Network.MPD.Core.MPDT (MPD, Host, Port, Password, Response, withMPDEx)
+import qualified Network.MPD.Core.MPDT as MPDT
 import           Network.MPD.Util
 import           Network.MPD.Core.Error
 
 import           Control.Monad.Error (MonadError(..))
-import           Control.Monad.State (modify, gets)
 
 import qualified Prelude
 import           Prelude hiding (break, drop, dropWhile, read)
@@ -49,12 +49,12 @@ class (Monad m, MonadError MPDError m) => MonadMPD m where
     getVersion :: m (Int, Int, Int)
 
 instance MonadMPD MPD where
-    open  = mpdOpen
-    close = mpdClose
-    send  = mpdSend
-    getPassword    = MPD $ gets stPassword
-    setPassword pw = MPD $ modify (\st -> st { stPassword = pw })
-    getVersion     = MPD $ gets stVersion
+    open        = MPDT.open
+    close       = MPDT.close
+    send        = MPDT.send
+    getPassword = MPDT.getPassword
+    setPassword = MPDT.setPassword
+    getVersion  = MPDT.getVersion
 
 --
 -- Other operations.

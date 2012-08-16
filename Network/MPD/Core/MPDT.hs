@@ -1,6 +1,19 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings, ScopedTypeVariables #-}
 
-module Network.MPD.Core.MPDT where
+module Network.MPD.Core.MPDT (
+      MPD
+    , Host
+    , Port
+    , Password
+    , Response
+    , withMPDEx
+    , open
+    , close
+    , send
+    , getVersion
+    , getPassword
+    , setPassword
+    ) where
 
 import           Network.MPD.Util
 import           Network.MPD.Core.Error
@@ -71,17 +84,26 @@ type Response = Either MPDError
 -- | The most configurable API for running an MPD action.
 withMPDEx :: Host -> Port -> Password -> MPD a -> IO (Response a)
 withMPDEx host port pw x = withSocketsDo $
-    runReaderT (evalStateT (runErrorT . runMPD $ mpdOpen >> (x <* mpdClose)) initState)
+    runReaderT (evalStateT (runErrorT . runMPD $ open >> (x <* close)) initState)
                (host, port)
     where initState = MPDState Nothing pw (0, 0, 0)
 
-mpdOpen :: MPD ()
-mpdOpen = MPD $ do
+getPassword :: MPD String
+getPassword = MPD $ gets stPassword
+
+setPassword :: String -> MPD ()
+setPassword pw = MPD $ modify (\st -> st { stPassword = pw })
+
+getVersion :: MPD (Int, Int, Int)
+getVersion = MPD $ gets stVersion
+
+open :: MPD ()
+open = MPD $ do
     (host, port) <- ask
-    runMPD mpdClose
+    runMPD close
     mHandle <- liftIO (safeConnectTo host port)
     modify (\st -> st { stHandle = mHandle })
-    F.forM_ mHandle $ \_ -> runMPD checkConn >>= (`unless` runMPD mpdClose)
+    F.forM_ mHandle $ \_ -> runMPD checkConn >>= (`unless` runMPD close)
     where
         safeConnectTo host@('/':_) _ =
             (Just <$> connectTo "" (UnixSocket host))
@@ -90,7 +112,7 @@ mpdOpen = MPD $ do
             (Just <$> connectTo host (PortNumber $ fromInteger port))
             `E.catch` (\(_ :: E.SomeException) -> return Nothing)
         checkConn = do
-            [msg] <- mpdSend ""
+            [msg] <- send ""
             if "OK MPD" `isPrefixOf` msg
                 then MPD $ checkVersion $ parseVersion msg
                 else return False
@@ -113,8 +135,8 @@ mpdOpen = MPD $ do
         formatVersion (x, y, z) = printf "%d.%d.%d" x y z
 
 
-mpdClose :: MPD ()
-mpdClose =
+close :: MPD ()
+close =
     MPD $ do
         mHandle <- gets stHandle
         F.forM_ mHandle $ \h -> do
@@ -130,11 +152,11 @@ mpdClose =
             | isEOFError err = return Nothing
             | otherwise      = (return . Just . ConnectionError) err
 
-mpdSend :: String -> MPD [ByteString]
-mpdSend str = send' `catchError` handler
+send :: String -> MPD [ByteString]
+send str = send' `catchError` handler
     where
         handler err
-          | ConnectionError e <- err, isEOFError e =  mpdOpen >> send'
+          | ConnectionError e <- err, isEOFError e =  open >> send'
           | otherwise = throwError err
 
         send' :: MPD [ByteString]
@@ -160,4 +182,4 @@ mpdSend str = send' `catchError` handler
         getHandle = get >>= maybe tryReconnect return
             where
                 get = MPD (gets stHandle)
-                tryReconnect = mpdOpen >> get >>= maybe (throwError NoMPD) return
+                tryReconnect = open >> get >>= maybe (throwError NoMPD) return
