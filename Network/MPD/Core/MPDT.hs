@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances #-}
 
 module Network.MPD.Core.MPDT (
       Host
@@ -24,7 +24,7 @@ import qualified Control.Exception as E
 import           Control.Monad (ap, unless)
 import           Control.Monad.Error (ErrorT(..), MonadError(..))
 import           Control.Monad.Reader (ReaderT(..), ask)
-import           Control.Monad.State (StateT, modify, gets, evalStateT)
+import           Control.Monad.State (MonadState(..), StateT, modify, gets, evalStateT)
 import           Control.Monad.Trans
 import qualified Data.Foldable as F
 import           Network (PortID(..), connectTo)
@@ -66,9 +66,6 @@ newtype MPDT m a =
                     (StateT MPDState
                      (ReaderT (Host, Port) m)) a
         } deriving (Functor, Monad, MonadIO, MonadError MPDError)
-
-instance MonadTrans MPDT where
-    lift = MPDT . lift . lift . lift
 
 instance (Functor m, Monad m) => Applicative (MPDT m) where
     (<*>) = ap
@@ -189,7 +186,17 @@ send str = send' `catchError` handler
 
         -- Return a handle to MPD.  Establish a connection, if necessary.
         getHandle :: MonadIO m => MPDT m Handle
-        getHandle = get >>= maybe tryReconnect return
+        getHandle = get_ >>= maybe tryReconnect return
             where
-                get = MPDT (gets stHandle)
-                tryReconnect = open >> get >>= maybe (throwError NoMPD) return
+                get_ = MPDT (gets stHandle)
+                tryReconnect = open >> get_ >>= maybe (throwError NoMPD) return
+--
+-- mtl lifting magic
+--
+instance MonadTrans MPDT where
+    lift = MPDT . lift . lift . lift
+
+instance MonadState s m => MonadState s (MPDT m) where
+    get   = lift get
+    put   = lift . put
+    state = lift . state
