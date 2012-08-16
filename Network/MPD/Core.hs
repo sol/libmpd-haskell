@@ -19,17 +19,25 @@ module Network.MPD.Core (
     getResponse, kill,
     ) where
 
-import           Network.MPD.Core.MPDT (MPD, Host, Port, Password, Response, withMPDEx)
+import           Network.MPD.Core.MPDT (MPDT, Host, Port, Password, Response)
 import qualified Network.MPD.Core.MPDT as MPDT
 import           Network.MPD.Util
 import           Network.MPD.Core.Error
 
-import           Control.Monad.Error (MonadError(..))
+import           Network (withSocketsDo)
+
+import           Control.Monad.Error (MonadError(..), MonadIO)
 
 import qualified Prelude
 import           Prelude hiding (break, drop, dropWhile, read)
 import           Data.ByteString.Char8 (ByteString, isPrefixOf, break, drop, dropWhile)
 import qualified Data.ByteString.UTF8 as UTF8
+
+type MPD = MPDT IO
+
+-- | The most configurable API for running an MPD action.
+withMPDEx :: Host -> Port -> Password -> MPD a -> IO (Response a)
+withMPDEx host port pw = withSocketsDo . MPDT.runMPDT host port pw
 
 -- | A typeclass to allow for multiple implementations of a connection
 --   to an MPD server.
@@ -48,7 +56,7 @@ class (Monad m, MonadError MPDError m) => MonadMPD m where
     -- | Get MPD protocol version
     getVersion :: m (Int, Int, Int)
 
-instance MonadMPD MPD where
+instance (MonadIO m) => MonadMPD (MPDT m) where
     open        = MPDT.open
     close       = MPDT.close
     send        = MPDT.send

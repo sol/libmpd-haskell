@@ -1,12 +1,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings, ScopedTypeVariables #-}
 
 module Network.MPD.Core.MPDT (
-      MPD
-    , Host
+      Host
     , Port
     , Password
     , Response
-    , withMPDEx
+    , MPDT
+    , runMPDT
     , open
     , close
     , send
@@ -19,14 +19,14 @@ import           Network.MPD.Util
 import           Network.MPD.Core.Error
 
 import           Data.Char (isDigit)
-import           Control.Applicative (Applicative(..), (<$>), (<*))
+import           Control.Applicative
 import qualified Control.Exception as E
 import           Control.Monad (ap, unless)
 import           Control.Monad.Error (ErrorT(..), MonadError(..))
 import           Control.Monad.Reader (ReaderT(..), ask)
 import           Control.Monad.State (StateT, MonadIO(..), modify, gets, evalStateT)
 import qualified Data.Foldable as F
-import           Network (PortID(..), withSocketsDo, connectTo)
+import           Network (PortID(..), connectTo)
 import           System.IO (Handle, hPutStrLn, hReady, hClose, hFlush)
 import           System.IO.Error (isEOFError)
 import qualified System.IO.UTF8 as U
@@ -60,14 +60,13 @@ type Port = Integer
 -- To run IO actions within the MPD monad:
 --
 -- > import Control.Monad.Trans (liftIO)
-
-newtype MPD a =
-    MPD { runMPD :: ErrorT MPDError
+newtype MPDT m a =
+    MPDT { unMPDT :: ErrorT MPDError
                     (StateT MPDState
-                     (ReaderT (Host, Port) IO)) a
+                     (ReaderT (Host, Port) m)) a
         } deriving (Functor, Monad, MonadIO, MonadError MPDError)
 
-instance Applicative MPD where
+instance (Functor m, Monad m) => Applicative (MPDT m) where
     (<*>) = ap
     pure  = return
 
@@ -81,29 +80,34 @@ data MPDState =
 -- | A response is either an 'MPDError' or some result.
 type Response = Either MPDError
 
--- | The most configurable API for running an MPD action.
-withMPDEx :: Host -> Port -> Password -> MPD a -> IO (Response a)
-withMPDEx host port pw x = withSocketsDo $
-    runReaderT (evalStateT (runErrorT . runMPD $ open >> (x <* close)) initState)
-               (host, port)
-    where initState = MPDState Nothing pw (0, 0, 0)
+runMPDT :: MonadIO m => Host -> Port -> Password -> MPDT m a -> m (Response a)
+runMPDT host port pw action =
+    (`runReaderT` config) . (`evalStateT` initState) . runErrorT . unMPDT $ do
+        open
+        r <- action
+        close
+        return r
+    where
+      config = (host, port)
+      initState = MPDState Nothing pw (0, 0, 0)
 
-getPassword :: MPD String
-getPassword = MPD $ gets stPassword
 
-setPassword :: String -> MPD ()
-setPassword pw = MPD $ modify (\st -> st { stPassword = pw })
+getPassword :: Monad m => MPDT m String
+getPassword = MPDT $ gets stPassword
 
-getVersion :: MPD (Int, Int, Int)
-getVersion = MPD $ gets stVersion
+setPassword :: Monad m => String -> MPDT m ()
+setPassword pw = MPDT $ modify (\st -> st { stPassword = pw })
 
-open :: MPD ()
-open = MPD $ do
+getVersion :: Monad m => MPDT m (Int, Int, Int)
+getVersion = MPDT $ gets stVersion
+
+open :: MonadIO m => MPDT m ()
+open = MPDT $ do
     (host, port) <- ask
-    runMPD close
+    unMPDT close
     mHandle <- liftIO (safeConnectTo host port)
     modify (\st -> st { stHandle = mHandle })
-    F.forM_ mHandle $ \_ -> runMPD checkConn >>= (`unless` runMPD close)
+    F.forM_ mHandle $ \_ -> unMPDT checkConn >>= (`unless` unMPDT close)
     where
         safeConnectTo host@('/':_) _ =
             (Just <$> connectTo "" (UnixSocket host))
@@ -111,10 +115,12 @@ open = MPD $ do
         safeConnectTo host port =
             (Just <$> connectTo host (PortNumber $ fromInteger port))
             `E.catch` (\(_ :: E.SomeException) -> return Nothing)
+
+        checkConn :: MonadIO m => MPDT m Bool
         checkConn = do
             [msg] <- send ""
             if "OK MPD" `isPrefixOf` msg
-                then MPD $ checkVersion $ parseVersion msg
+                then MPDT $ checkVersion $ parseVersion msg
                 else return False
 
         checkVersion Nothing = throwError $ Custom "Couldn't determine MPD version"
@@ -135,9 +141,9 @@ open = MPD $ do
         formatVersion (x, y, z) = printf "%d.%d.%d" x y z
 
 
-close :: MPD ()
+close :: MonadIO m => MPDT m ()
 close =
-    MPD $ do
+    MPDT $ do
         mHandle <- gets stHandle
         F.forM_ mHandle $ \h -> do
           modify $ \st -> st{stHandle = Nothing}
@@ -152,17 +158,17 @@ close =
             | isEOFError err = return Nothing
             | otherwise      = (return . Just . ConnectionError) err
 
-send :: String -> MPD [ByteString]
+send :: MonadIO m => String -> MPDT m [ByteString]
 send str = send' `catchError` handler
     where
         handler err
           | ConnectionError e <- err, isEOFError e =  open >> send'
           | otherwise = throwError err
 
-        send' :: MPD [ByteString]
+        send' :: MonadIO m => MPDT m [ByteString]
         send' = getHandle >>= go
 
-        go handle = MPD $ do
+        go handle = MPDT $ do
             unless (null str) $
                 liftIO $ U.hPutStrLn handle str >> hFlush handle
             liftIO ((Right <$> getLines handle []) `E.catch` (return . Left))
@@ -178,8 +184,8 @@ send str = send' `catchError` handler
                 else getLines handle (l:acc)
 
         -- Return a handle to MPD.  Establish a connection, if necessary.
-        getHandle :: MPD Handle
+        getHandle :: MonadIO m => MPDT m Handle
         getHandle = get >>= maybe tryReconnect return
             where
-                get = MPD (gets stHandle)
+                get = MPDT (gets stHandle)
                 tryReconnect = open >> get >>= maybe (throwError NoMPD) return
