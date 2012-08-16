@@ -21,7 +21,6 @@ module Network.MPD.Core (
 
 import           Network.MPD.Core.MPDT
 import           Network.MPD.Util
-import           Network.MPD.Core.Class
 import           Network.MPD.Core.Error
 
 import           Control.Monad.Error (MonadError(..))
@@ -31,6 +30,23 @@ import qualified Prelude
 import           Prelude hiding (break, drop, dropWhile, read)
 import           Data.ByteString.Char8 (ByteString, isPrefixOf, break, drop, dropWhile)
 import qualified Data.ByteString.UTF8 as UTF8
+
+-- | A typeclass to allow for multiple implementations of a connection
+--   to an MPD server.
+class (Monad m, MonadError MPDError m) => MonadMPD m where
+    -- | Open (or re-open) a connection to the MPD server.
+    open  :: m ()
+    -- | Close the connection.
+    close :: m ()
+    -- | Send a string to the server and return its response.
+    send  :: String -> m [ByteString]
+    -- | Produce a password to send to the server should it ask for
+    --   one.
+    getPassword :: m Password
+    -- | Alters password to be sent to the server.
+    setPassword :: Password -> m ()
+    -- | Get MPD protocol version
+    getVersion :: m (Int, Int, Int)
 
 instance MonadMPD MPD where
     open  = mpdOpen

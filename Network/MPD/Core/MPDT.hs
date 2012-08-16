@@ -3,7 +3,6 @@
 module Network.MPD.Core.MPDT where
 
 import           Network.MPD.Util
-import           Network.MPD.Core.Class (Password)
 import           Network.MPD.Core.Error
 
 import           Data.Char (isDigit)
@@ -28,6 +27,8 @@ import qualified Data.ByteString.Char8 as B
 --
 -- Data types.
 --
+
+type Password = String
 
 type Host = String
 type Port = Integer

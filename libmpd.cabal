@@ -69,7 +69,6 @@ Library
       , Network.MPD.Core
 
     Other-Modules:
-        Network.MPD.Core.Class
         Network.MPD.Core.MPDT
       , Network.MPD.Core.Error
       , Network.MPD.Commands
