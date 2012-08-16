@@ -24,7 +24,8 @@ import qualified Control.Exception as E
 import           Control.Monad (ap, unless)
 import           Control.Monad.Error (ErrorT(..), MonadError(..))
 import           Control.Monad.Reader (ReaderT(..), ask)
-import           Control.Monad.State (StateT, MonadIO(..), modify, gets, evalStateT)
+import           Control.Monad.State (StateT, modify, gets, evalStateT)
+import           Control.Monad.Trans
 import qualified Data.Foldable as F
 import           Network (PortID(..), connectTo)
 import           System.IO (Handle, hPutStrLn, hReady, hClose, hFlush)
@@ -65,6 +66,9 @@ newtype MPDT m a =
                     (StateT MPDState
                      (ReaderT (Host, Port) m)) a
         } deriving (Functor, Monad, MonadIO, MonadError MPDError)
+
+instance MonadTrans MPDT where
+    lift = MPDT . lift . lift . lift
 
 instance (Functor m, Monad m) => Applicative (MPDT m) where
     (<*>) = ap
