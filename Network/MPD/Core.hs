@@ -12,14 +12,15 @@ module Network.MPD.Core (
     -- * Classes
     MonadMPD(..),
     -- * Data types
-    MPD, MPDError(..), ACKType(..), Response, Host, Port, Password,
+    MPDT, MPD, MPDError(..), ACKType(..), Response, Host, Port, Password,
     -- * Running
     withMPDEx,
+    runMPDT,
     -- * Interacting
     getResponse, kill,
     ) where
 
-import           Network.MPD.Core.MPDT (MPDT, Host, Port, Password, Response)
+import           Network.MPD.Core.MPDT (MPDT, Host, Port, Password, Response, runMPDT)
 import qualified Network.MPD.Core.MPDT as MPDT
 import           Network.MPD.Util
 import           Network.MPD.Core.Error
@@ -36,8 +37,8 @@ import qualified Data.ByteString.UTF8 as UTF8
 type MPD = MPDT IO
 
 -- | The most configurable API for running an MPD action.
-withMPDEx :: Host -> Port -> Password -> MPD a -> IO (Response a)
-withMPDEx host port pw = withSocketsDo . MPDT.runMPDT host port pw
+withMPDEx :: Host -> Port -> MPD a -> IO (Response a)
+withMPDEx host port = withSocketsDo . runMPDT host port
 
 -- | A typeclass to allow for multiple implementations of a connection
 --   to an MPD server.

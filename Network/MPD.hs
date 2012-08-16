@@ -63,30 +63,21 @@ withMPD_ :: Maybe String -- ^ optional override for MPD_HOST
 withMPD_ mHost mPort action = do
     settings <- getConnectionSettings mHost mPort
     case settings of
-      Right (host, port, pw) -> withMPDEx host port pw action
+      Right (host, port) -> withMPDEx host port action
       Left err -> (return . Left . Custom) err
 
-getConnectionSettings :: Maybe String -> Maybe String -> IO (Either String (Host, Port, Password))
+getConnectionSettings :: Maybe String -> Maybe String -> IO (Either String (Host, Port))
 getConnectionSettings mHost mPort = do
-    (host, pw) <- parseHost `fmap`
-        maybe (getEnvDefault "MPD_HOST" "localhost") return mHost
+    host <- maybe (getEnvDefault "MPD_HOST" "localhost") return mHost
     port <- maybe (getEnvDefault "MPD_PORT" "6600") return mPort
     case maybeRead port of
-      Just p  -> (return . Right) (host, p, pw)
+      Just p  -> (return . Right) (host, p)
       Nothing -> (return . Left) (show port ++ " is not a valid port!")
-    where
-        parseHost s = case breakChar '@' s of
-                          (host, "") -> (host, "")
-                          (pw, host) -> (host, pw)
 
 getEnvDefault :: String -> String -> IO String
 getEnvDefault x dflt =
     E.catch (getEnv x) (\e -> if isDoesNotExistError e
                             then return dflt else ioError e)
-
--- Break a string by character, removing the separator.
-breakChar :: Char -> String -> (String, String)
-breakChar c s = let (x, y) = break (== c) s in (x, drop 1 y)
 
 maybeRead :: Read a => String -> Maybe a
 maybeRead = fmap fst . listToMaybe . reads

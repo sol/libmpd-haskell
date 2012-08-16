@@ -1,4 +1,6 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings, ScopedTypeVariables
+           , FlexibleInstances, MultiParamTypeClasses, UndecidableInstances
+           , CPP #-}
 
 module Network.MPD.Core.MPDT (
       Host
@@ -13,6 +15,9 @@ module Network.MPD.Core.MPDT (
     , getVersion
     , getPassword
     , setPassword
+#ifdef TEST
+    , parseHost
+#endif
     ) where
 
 import           Network.MPD.Util
@@ -34,7 +39,7 @@ import qualified System.IO.UTF8 as U
 import           Text.Printf (printf)
 
 import qualified Prelude
-import           Prelude hiding (break, drop, dropWhile, read)
+import           Prelude hiding (dropWhile)
 import           Data.ByteString.Char8 (ByteString, isPrefixOf, dropWhile)
 import qualified Data.ByteString.Char8 as B
 
@@ -44,7 +49,15 @@ import qualified Data.ByteString.Char8 as B
 
 type Password = String
 
+-- |
+-- The hostname of the mpd server.  This can be a hostname, IP address or an
+-- absolute path.  If it is an absolute path, libmpd will use Unix Domain
+-- Sockets instead of TCP/IP.
+--
+-- If the server requires a password, it can be specified using
+-- @password\@host@.
 type Host = String
+
 type Port = Integer
 
 --
@@ -64,7 +77,7 @@ type Port = Integer
 newtype MPDT m a =
     MPDT { unMPDT :: ErrorT MPDError
                     (StateT MPDState
-                     (ReaderT (Host, Port) m)) a
+                     (ReaderT (String, Port) m)) a
         } deriving (Functor, Monad, MonadIO, MonadError MPDError)
 
 instance (Functor m, Monad m) => Applicative (MPDT m) where
@@ -81,8 +94,8 @@ data MPDState =
 -- | A response is either an 'MPDError' or some result.
 type Response = Either MPDError
 
-runMPDT :: MonadIO m => Host -> Port -> Password -> MPDT m a -> m (Response a)
-runMPDT host port pw action =
+runMPDT :: MonadIO m => Host -> Port -> MPDT m a -> m (Response a)
+runMPDT h port action =
     (`runReaderT` config) . (`evalStateT` initState) . runErrorT . unMPDT $ do
         open
         r <- action
@@ -91,7 +104,13 @@ runMPDT host port pw action =
     where
       config = (host, port)
       initState = MPDState Nothing pw (0, 0, 0)
+      (host, pw) = parseHost h
 
+-- | `Host` into hostname and password.
+parseHost :: String -> (String, Password)
+parseHost s = case break (== '@') s of
+                  (host, "") -> (host, "")
+                  (pw, host) -> (drop 1 host, pw)
 
 getPassword :: Monad m => MPDT m String
 getPassword = MPDT $ gets stPassword
