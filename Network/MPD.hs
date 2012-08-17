@@ -24,6 +24,9 @@ module Network.MPD (
     Host, Port, Password,
     -- * Connections
     withMPD, withMPD_, withMPDEx,
+    -- * MPD monad transformer
+    MPDT, runMPDT,
+    -- * Commands
     module Network.MPD.Commands,
 #ifdef TEST
     getConnectionSettings, getEnvDefault
