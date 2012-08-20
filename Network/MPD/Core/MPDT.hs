@@ -94,6 +94,7 @@ data MPDState =
 -- | A response is either an 'MPDError' or some result.
 type Response = Either MPDError
 
+-- | TODO: add note about `Network.withSocketsDo`
 runMPDT :: MonadIO m => Host -> Port -> MPDT m a -> m (Response a)
 runMPDT h port action =
     (`runReaderT` config) . (`evalStateT` initState) . runErrorT . unMPDT $ do

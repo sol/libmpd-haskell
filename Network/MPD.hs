@@ -63,7 +63,7 @@ withMPD = withMPD_ Nothing Nothing
 withMPD_ :: Maybe String -- ^ optional override for MPD_HOST
          -> Maybe String -- ^ optional override for MPD_PORT
          -> MPD a -> IO (Response a)
-withMPD_ mHost mPort action = do
+withMPD_ mHost mPort action = do -- FIXME: deprecate?
     settings <- getConnectionSettings mHost mPort
     case settings of
       Right (host, port) -> withMPDEx host port action
